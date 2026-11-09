@@ -21,9 +21,10 @@ lost key cannot be recovered.
 
 ## Input rules
 
-Nothing a client sends is trusted. Every query parameter and body field is
-checked before any query runs; a request that breaks a rule is rejected with
-`400` (see [Errors](#errors)) and nothing is stored.
+Nothing a client sends is trusted. After the API key is verified, every query
+parameter and body field is checked before any query on orders runs; a request
+that breaks a rule is rejected with `400` (see [Errors](#errors)) and nothing
+is stored.
 
 **Everywhere, on every authenticated route:** no query parameter and no body field may
 be an array or an object. That includes a repeated parameter
@@ -34,7 +35,7 @@ fields with a single value are ignored.
 |---|---|---|
 | body | `POST /api/orders` | A JSON object, at most 100 KB. |
 | `customer_email` | body | Required. Text shaped like `name@example.com`, with no spaces and no `<` or `>`, at most 254 characters. Stored as sent (no trimming, no lower-casing). |
-| `total_amount` | body | Required. A JSON number that is an integer between `1` and `100000000` (cents). No decimals, no strings. |
+| `total_amount` | body | Required. A JSON number whose value is an integer between `1` and `100000000` (cents). `12.5` and `"5000"` are rejected. `5000.0` is accepted: in JSON it is the integer 5000. |
 | `type` | body | Optional. `"sale"` or `"refund"`. Leaving it out means `"sale"`; `null` or any other value is rejected. |
 | `from`, `to` | query of `/api/orders` and `/api/revenue` | `YYYY-MM-DD`, a date that exists, with `from` earlier than `to`. Days are UTC; `from` is inclusive, `to` is exclusive. Required in `/api/revenue`. Optional in `/api/orders`, but both or neither. A time (`2026-11-06T00:00:00Z`) is rejected. |
 | `limit` | query of `/api/orders` and `/api/metrics/top-customers` | Optional. Digits only, between `1` and `100`. |
@@ -58,9 +59,9 @@ Revenue and metrics follow the same rules, defined once in
 - A refund subtracts in the period **the refund was created**, not the period
   of the sale: a refund is not linked to a sale. Revenue for a period can be
   negative.
-- A row the API would reject today on `type` or `total_amount` (see
-  [Input rules](#input-rules)) is worth nothing and is not counted anywhere.
-  Such rows can only predate validation; the README has a query to list them.
+- A stored row the API would reject today on `type` or `total_amount` is not
+  counted anywhere. See
+  [Rows stored before validation](../README.md#rows-stored-before-validation).
 - `GET /api/orders` is not affected: it lists every stored row, refunds
   included.
 
@@ -80,10 +81,6 @@ Revenue and metrics follow the same rules, defined once in
 
 `created_at` is UTC. `id`, `merchant_id`, `status` and `created_at` are set by
 the server; sending them in a body has no effect.
-
-Orders written before these rules existed may hold values the API would reject
-today. They are still listed, but they do not count in revenue or metrics (see
-[Money rules](#money-rules)). The README has a query to list them.
 
 ## Endpoints
 
@@ -183,17 +180,26 @@ itself, which is read before authentication, so a body that is not valid JSON,
 is too large or has an unsupported charset gets `400` / `413` / `415` even
 without a key.
 
-**Changed from earlier versions:** `invalid_body` and `missing_date_range` no
-longer exist; both are now `invalid_request` with `details`. Requests that used
-to be accepted or silently ignored are now `400`: `limit` of `0`, negative or
-above 100, `from` without `to` in `/api/orders`, dates with a time, decimal or
-non-positive amounts, and `type` other than `sale` / `refund`.
-
-**Changed figures:** refunds used to be added as if they were sales. Now
-`revenue_cents` subtracts them, `total_orders`, `unique_customers` and
-`avg_order_value_cents` count sales only, and top-customers ranks by net spent.
-The response shapes are the same; the numbers are lower than before for any
-merchant with refunds.
-
 A path under `/api` that matches no route still answers with Express's default
 HTML `404` page.
+
+## Breaking changes
+
+For a client written against the first version of this API:
+
+- **Authentication.** `X-Merchant-Id` is not accepted. Send the merchant's API
+  key as `Authorization: Bearer <api key>`. The `401` error code is
+  `unauthorized`, not `missing_merchant_id`.
+- **Orders of another merchant.** `GET /api/orders/:id` answers `404` for an
+  order that belongs to another merchant.
+- **Error codes.** `invalid_body` and `missing_date_range` do not exist. Both
+  are `invalid_request` with `details` (see [Errors](#errors)).
+- **Requests that are now `400`.** `limit` of `0`, negative, above 100 or not
+  digits; `from` without `to` (or the reverse) in `/api/orders`; dates with a
+  time or that are not real dates; decimal or non-positive amounts; `type`
+  other than `sale` / `refund`; a `customer_email` not shaped like an email;
+  any parameter or field that is an array or an object.
+- **Figures.** Refunds are not added as sales. `revenue_cents` subtracts them,
+  `total_orders`, `unique_customers` and `avg_order_value_cents` count sales
+  only, and top-customers ranks by net spent. The response shapes are the
+  same; the numbers are lower for any merchant with refunds.

@@ -41,10 +41,12 @@ API under `/api` and the static dashboard in `public/`.
 ## Authentication and tenancy
 
 1. The client sends its API key as a Bearer token.
-2. `auth.ts` hashes it (SHA-256) and looks for that hash in `merchants`.
+2. `auth.ts` hands it to `api-keys.ts`, which hashes it (SHA-256) and looks
+   for that hash in `merchants`.
 3. No match: `401`. Match: `req.merchantId` is that merchant's id.
-4. Routes pass `req.merchantId` to every query. Nothing sent by the client
-   (header, query string or body) is used as a merchant id.
+4. `validated()` gives that merchant id to the route handler, which passes it
+   to every query. Nothing sent by the client (header, query string or body)
+   is used as a merchant id.
 
 Keys are random (24 bytes), shown once when issued and stored only as a hash.
 There is no key rotation yet.
@@ -62,7 +64,7 @@ this order:
    rejects any query parameter or body field that is an array or an object,
    whether the route uses it or not. Express turns `?limit=1&limit=2` into an
    array, and the SQLite driver spreads an array over several bind parameters,
-   which used to shift values into the wrong columns.
+   which can shift values into the wrong columns.
 4. `validated()` then runs the route's parsers from `validation.ts`. If any
    field fails, it throws one `ValidationError` with all the failures and the
    handler does not run.
@@ -89,7 +91,7 @@ to the parser, a case to `test/validation.test.ts` and a row to the table in
 `docs/api.md`.
 
 The rules themselves are in [`api.md`](./api.md#input-rules). They are written
-by hand, with no validation library: five fields did not justify a dependency.
+by hand, with no validation library: six fields did not justify a dependency.
 
 Dates are accepted only as `YYYY-MM-DD` on purpose. `orders.created_at` holds
 two formats (`2026-11-06T00:00:01.000Z` from the seed, `2026-11-06 02:28:37`
@@ -98,8 +100,8 @@ a time does not.
 
 Validation covers what enters through the API. The database has no `CHECK`
 constraints, so anything that writes to it directly (the seed, a script) is
-not covered, and rows stored before validation existed stay as they are until
-someone decides what to do with them (the README has a query to list them).
+not covered. For rows stored before validation existed, see
+[Rows stored before validation](../README.md#rows-stored-before-validation).
 
 ## Data model
 
@@ -131,9 +133,9 @@ Every query that reports money or counts orders is built from them:
 
 Decisions behind them:
 
-- **One definition, two consumers.** Revenue and metrics used to each sum
-  `total_amount` on their own, and both counted refunds as sales. A new query
-  that reports money must use the fragments, not `total_amount` directly.
+- **One definition, two consumers.** Revenue and metrics take what a row is
+  worth from the same fragments, so they cannot disagree. A new query that
+  reports money must use the fragments, not `total_amount` directly.
 - **A refund counts when it was created.** Without a link to the sale there is
   no other date to use. A period can therefore have negative revenue.
 - **Invalid rows are worth nothing.** A row with an unknown `type`, or an
@@ -147,11 +149,10 @@ Decisions behind them:
   the merchant's rows, so they are always consistent with each other.
 
 Cost: each of these queries reads every order of the merchant (found through
-`idx_orders_merchant`), as before. Measured on 200,000 orders for one merchant:
-summary about 70 ms (80 ms before, when it was three queries), revenue over a
-year about 35 ms (30 before), top-customers about 65 ms (45 before). The
-fragments add a comparison per row, not an extra pass. `better-sqlite3` is
-synchronous, so the process answers nothing else while one of these runs.
+`idx_orders_merchant`). Measured on a development machine with 200,000 orders
+for one merchant: summary about 50 ms, revenue over a year about 20 ms,
+top-customers about 50 ms. `better-sqlite3` is synchronous, so the process
+answers nothing else while one of these runs.
 
 ## Configuration
 
@@ -162,8 +163,9 @@ synchronous, so the process answers nothing else while one of these runs.
 
 ## Tests
 
-`npm test` runs `test/*.test.ts`, each file in its own process, on an
-in-memory database.
+`npm test` runs every `*.test.ts` under `test/`, each file in its own process.
+The tests use an in-memory database, except the two that load
+`routes/metrics.ts`, which use a file in a temp folder (see the table).
 
 | File | Covers |
 |---|---|

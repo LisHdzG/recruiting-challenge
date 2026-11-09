@@ -40,7 +40,11 @@ The database is SQLite, kept in `data/dashboard.db`. `npm run seed` creates two 
 **If you already have a `data/dashboard.db` from an earlier version:**
 
 - From before API keys existed: run `npm run migrate` once. It adds the key column and prints a key for each existing merchant; the server will not start until you do.
-- From before input validation existed: no migration is needed and the server starts as usual, but the file may hold orders the API would reject today (negative or decimal amounts, a `type` other than `sale` / `refund`, text that is not an email). Validation stops new ones; it does not fix or delete what is already stored. Rows with an invalid amount or `type` are still listed by `GET /api/orders`, but they do not count in revenue or metrics (a row with only an invalid email still counts). To list them, run this read-only query (`sqlite3 data/dashboard.db`). It follows the API rules closely, not exactly: the email check is an approximation.
+- From before input validation existed: no migration is needed and the server starts as usual. See [Rows stored before validation](#rows-stored-before-validation).
+
+### Rows stored before validation
+
+A database from before input validation may hold orders the API would reject today (negative or decimal amounts, a `type` other than `sale` / `refund`, text that is not an email). Validation stops new ones; it does not fix or delete what is already stored. Rows with an invalid amount or `type` are still listed by `GET /api/orders`, but they do not count in revenue or metrics (a row with only an invalid email still counts). To list them, run this read-only query (`sqlite3 data/dashboard.db`). It follows the API rules closely, not exactly: the email check is an approximation.
 
 ```sql
 SELECT id, merchant_id, customer_email, total_amount, type
@@ -54,7 +58,7 @@ WHERE typeof(total_amount) <> 'integer' OR total_amount < 1 OR total_amount > 10
 
 **How money is counted.** Revenue is sales minus refunds. The number of orders, the number of customers and the average order value count sales only. Top customers are ranked by what they spent net of their refunds. The rules are defined once, in `src/dal/order-rules.ts`, and listed in [`docs/api.md`](./docs/api.md#money-rules). A refund subtracts on the date the refund was created.
 
-The API validates everything a client sends before it reaches a query and answers `400` with the fields that failed; see [`docs/api.md`](./docs/api.md#input-rules). Clients written against an earlier version should read "Changed from earlier versions" there: some requests that used to be accepted are now rejected.
+The API validates everything a client sends before it reaches a query and answers `400` with the fields that failed; see [`docs/api.md`](./docs/api.md#input-rules). Clients written against the first version should read [Breaking changes](./docs/api.md#breaking-changes).
 
 ```sh
 npm test     # run the (intentionally thin) test suite

@@ -12,11 +12,10 @@ export interface OrderRow {
 }
 
 /**
- * Data-access layer for orders. All order queries should go through here.
+ * Data-access layer for orders. Every query here filters by merchant id.
  *
- * - centralized place for query patterns
- * - the place to add auditing, caching, tenancy filters
- * - the seam for swapping the underlying store
+ * Not every order query lives here: `routes/metrics.ts` runs its own, on a
+ * separate read-only connection.
  */
 export const ordersDal = {
   listByMerchant(merchantId: string, opts: { from?: string; to?: string; limit?: number } = {}): OrderRow[] {
