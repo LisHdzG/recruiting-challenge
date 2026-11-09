@@ -1,4 +1,5 @@
 import { db } from '../db.js';
+import { NET_AMOUNT } from './order-rules.js';
 
 export interface OrderRow {
   id: string;
@@ -50,13 +51,14 @@ export const ordersDal = {
   },
 
   /**
-   * Sum total_amount over a date range for a merchant.
-   * Used by the revenue endpoint.
+   * Net revenue of a merchant in a date range: sales minus refunds, in cents.
+   * Can be negative (a period with more refunded than sold). What a row is
+   * worth is decided in `order-rules.ts`. Used by the revenue endpoint.
    */
-  sumAmountByMerchant(merchantId: string, from: string, to: string): number {
+  netRevenueByMerchant(merchantId: string, from: string, to: string): number {
     const row = db
       .prepare(
-        `SELECT COALESCE(SUM(total_amount), 0) AS total
+        `SELECT COALESCE(SUM(${NET_AMOUNT}), 0) AS total
          FROM orders
          WHERE merchant_id = ? AND created_at >= ? AND created_at < ?`,
       )

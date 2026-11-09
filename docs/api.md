@@ -40,6 +40,29 @@ fields with a single value are ignored.
 | `limit` | query of `/api/orders` and `/api/metrics/top-customers` | Optional. Digits only, between `1` and `100`. |
 
 A refund is an order with a positive `total_amount` and `"type": "refund"`.
+How it counts is in [Money rules](#money-rules).
+
+## Money rules
+
+Revenue and metrics follow the same rules, defined once in
+`src/dal/order-rules.ts`:
+
+| Figure | Rule |
+|---|---|
+| Revenue | Sales minus refunds. |
+| Number of orders | Sales only. A refund is not an order. |
+| Number of customers | Customers with at least one sale. |
+| Average order value | Sum of sales divided by number of sales. Refunds do not lower it, so average × orders is not the revenue. |
+| Customer's total spent | That customer's sales minus their refunds. |
+
+- A refund subtracts in the period **the refund was created**, not the period
+  of the sale: a refund is not linked to a sale. Revenue for a period can be
+  negative.
+- A row the API would reject today on `type` or `total_amount` (see
+  [Input rules](#input-rules)) is worth nothing and is not counted anywhere.
+  Such rows can only predate validation; the README has a query to list them.
+- `GET /api/orders` is not affected: it lists every stored row, refunds
+  included.
 
 ## Order object
 
@@ -59,7 +82,8 @@ A refund is an order with a positive `total_amount` and `"type": "refund"`.
 the server; sending them in a body has no effect.
 
 Orders written before these rules existed may hold values the API would reject
-today. The README has a query to list them.
+today. They are still listed, but they do not count in revenue or metrics (see
+[Money rules](#money-rules)). The README has a query to list them.
 
 ## Endpoints
 
@@ -91,24 +115,38 @@ curl -X POST http://localhost:3000/api/orders \
 ```
 
 ### `GET /api/revenue?from=YYYY-MM-DD&to=YYYY-MM-DD`
-Sum of `total_amount` in the range. Both dates are required.
+Net revenue in the range: sales minus refunds (see [Money rules](#money-rules)).
+Both dates are required. `revenue_cents` is an integer and can be negative;
+`revenue` is the same amount in currency units.
 
 ```json
-{ "merchant_id": "m_acme", "from": "2026-10-01", "to": "2026-11-01", "revenue_cents": 412118, "revenue": 4121.18 }
+{ "merchant_id": "m_acme", "from": "2026-10-01", "to": "2026-11-01", "revenue_cents": 290698, "revenue": 2906.98 }
 ```
 
 To include today, send tomorrow's date as `to`.
 
 ### `GET /api/metrics/summary`
+All-time figures for the merchant, counting sales only (see
+[Money rules](#money-rules)). A merchant with no sales gets zeros.
+
+| Field | Meaning |
+|---|---|
+| `total_orders` | Number of sales. |
+| `unique_customers` | Customers with at least one sale. |
+| `avg_order_value_cents` | Sum of sales / number of sales, rounded to a whole cent. |
+
 ```json
-{ "merchant_id": "m_acme", "total_orders": 40, "unique_customers": 6, "avg_order_value_cents": 10303 }
+{ "merchant_id": "m_acme", "total_orders": 34, "unique_customers": 6, "avg_order_value_cents": 10336 }
 ```
 
 ### `GET /api/metrics/top-customers`
-Customers by total spent, highest first. Query: `limit` (default 5, 1 to 100).
+Customers by net spent (their sales minus their refunds), highest first; ties
+in alphabetical order. `order_count` is the customer's number of sales. A
+customer with no sale, or with a net of zero or less, is not listed. Query:
+`limit` (default 5, 1 to 100).
 
 ```json
-{ "customers": [{ "customer_email": "carla@example.com", "order_count": 9, "total_spent": 138049 }] }
+{ "customers": [{ "customer_email": "carla@example.com", "order_count": 7, "total_spent": 84713 }] }
 ```
 
 ## Errors
@@ -150,6 +188,12 @@ longer exist; both are now `invalid_request` with `details`. Requests that used
 to be accepted or silently ignored are now `400`: `limit` of `0`, negative or
 above 100, `from` without `to` in `/api/orders`, dates with a time, decimal or
 non-positive amounts, and `type` other than `sale` / `refund`.
+
+**Changed figures:** refunds used to be added as if they were sales. Now
+`revenue_cents` subtracts them, `total_orders`, `unique_customers` and
+`avg_order_value_cents` count sales only, and top-customers ranks by net spent.
+The response shapes are the same; the numbers are lower than before for any
+merchant with refunds.
 
 A path under `/api` that matches no route still answers with Express's default
 HTML `404` page.

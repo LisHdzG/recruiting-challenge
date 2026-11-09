@@ -23,11 +23,12 @@ API under `/api` and the static dashboard in `public/`.
 - **`errors.ts`** — the one error handler. Client errors become 4xx in a single
   shape; anything else is `500 internal_error` with the detail in the log.
 - **`dal/`** — data-access layer. Order queries go through `ordersDal`, and
-  every one of them takes the merchant id as a filter.
+  every one of them takes the merchant id as a filter. `order-rules.ts` holds
+  the money rules (see [Money rules](#money-rules)).
 - **`routes/`** — Express routers, one file per resource. Every handler is
   registered through `validated()` and never sees the request object.
   `metrics.ts` does not use the DAL: it runs its own queries on a second,
-  read-only connection.
+  read-only connection. It does take the money rules from `dal/order-rules.ts`.
 - **`scripts/seed.ts`** — `npm run seed`. Creates demo data when there are no
   orders and prints the API keys of the merchants it creates.
 - **`scripts/migrate.ts`** — `npm run migrate`. Adds `merchants.api_key_hash` to
@@ -109,8 +110,48 @@ cannot authenticate).
 
 `orders.type` is `'sale'` or `'refund'`; the API accepts nothing else, but the
 column itself does not enforce it. A refund row has a positive `total_amount`
-and records that a sale was reversed; it does not by itself reverse the sale
-row.
+and records that money was returned. It has no reference to the sale it
+reverses and does not change that row.
+
+## Money rules
+
+What a row is worth is decided in one file, `src/dal/order-rules.ts`, as three
+SQL fragments:
+
+| Fragment | Meaning |
+|---|---|
+| `IS_SALE` | `type = 'sale'` with an amount the API would accept (integer, 1 to the maximum). |
+| `IS_REFUND` | `type = 'refund'` with an amount the API would accept. |
+| `NET_AMOUNT` | `+total_amount` for a sale, `-total_amount` for a refund, `0` for anything else. |
+
+Every query that reports money or counts orders is built from them:
+`ordersDal.netRevenueByMerchant` (revenue) and the two queries in
+`routes/metrics.ts`. The business rules they implement are listed in
+[`api.md`](./api.md#money-rules).
+
+Decisions behind them:
+
+- **One definition, two consumers.** Revenue and metrics used to each sum
+  `total_amount` on their own, and both counted refunds as sales. A new query
+  that reports money must use the fragments, not `total_amount` directly.
+- **A refund counts when it was created.** Without a link to the sale there is
+  no other date to use. A period can therefore have negative revenue.
+- **Invalid rows are worth nothing.** A row with an unknown `type`, or an
+  amount that is negative, decimal or above the maximum, is ignored instead of
+  guessed at. Subtracting a refund stored as `-500` would add 500. The amount
+  limit comes from `MAX_TOTAL_AMOUNT` in `validation.ts`, so the rule for
+  counting a row and the rule for accepting it cannot drift apart.
+- **Rules are applied when reading.** Nothing stored is changed or deleted, so
+  the rules can be revised without a data migration.
+- **The summary is one query.** Its three figures come from a single pass over
+  the merchant's rows, so they are always consistent with each other.
+
+Cost: each of these queries reads every order of the merchant (found through
+`idx_orders_merchant`), as before. Measured on 200,000 orders for one merchant:
+summary about 70 ms (80 ms before, when it was three queries), revenue over a
+year about 35 ms (30 before), top-customers about 65 ms (45 before). The
+fragments add a comparison per row, not an extra pass. `better-sqlite3` is
+synchronous, so the process answers nothing else while one of these runs.
 
 ## Configuration
 
@@ -129,6 +170,7 @@ in-memory database.
 | `auth.test.ts`, `migrate.test.ts`, `seed.test.ts`, `orders.test.ts` | Auth, migration, seed and the orders DAL. |
 | `validation.test.ts` | Every input rule, with no database and no HTTP. |
 | `routes.test.ts` | Orders and revenue over real HTTP: valid requests, each invalid one answering 400 and storing nothing, 413 / 415, and that a server failure is still a 500. |
+| `money-rules.test.ts` | The money rules over HTTP, on revenue and both metrics endpoints: refunds subtract, a period can be negative, invalid stored rows are ignored, merchants with no sales get zeros, and revenue agrees with top-customers. Temp database file, as below. |
 | `metrics-limit.test.ts` | `limit` in top-customers over HTTP. Uses a database file in a temp folder, because `routes/metrics.ts` cannot open an in-memory database. |
 | `route-guard.test.ts` | The gate described in Input validation. |
 
@@ -139,6 +181,18 @@ dashboard (`public/`) has no automated test.
 ## Known gaps
 
 - No HTTPS, rate limiting or request log in this process.
+- The dashboard's "Revenue (last 30 days)" asks for a range that ends today
+  (exclusive, UTC), so it leaves out today's orders. The API figure is right
+  for the range it is given.
+- `orders.created_at` holds two formats, so "newest first" can misorder rows
+  of the same day, and the dashboard can show the wrong day for orders created
+  through the API.
+- A refund is not linked to a sale: nothing stops refunding more than was
+  sold, and a refund cannot be attributed to the sale's period.
+- Revenue and metrics read every order of the merchant on each request, with
+  no pre-computed totals and no index on `(merchant_id, created_at)`. Fine at
+  the measured size; it grows linearly with the merchant's orders.
+- The summary and top-customers are all-time; they take no date range.
 - The database does not enforce the input rules (no `CHECK` constraints).
 - `customer_email` rejects `<` and `>` but is otherwise free text shaped like
   an email. The dashboard shows it as text; any other consumer of the API has
