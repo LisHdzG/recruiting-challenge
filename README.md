@@ -21,6 +21,8 @@ We care less about *whether* you finish than *how* you decide what to do. Read [
 
 ## Setup
 
+Step-by-step guide (fresh clone, updating an existing copy, common problems): [`docs/setup.md`](./docs/setup.md).
+
 Requirements: **Node 20+**.
 
 ```sh
