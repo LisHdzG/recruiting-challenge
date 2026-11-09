@@ -39,6 +39,11 @@ fields with a single value are ignored.
 | `type` | body | Optional. `"sale"` or `"refund"`. Leaving it out means `"sale"`; `null` or any other value is rejected. |
 | `from`, `to` | query of `/api/orders` and `/api/revenue` | `YYYY-MM-DD`, a date that exists, with `from` earlier than `to`. Days are UTC; `from` is inclusive, `to` is exclusive. Required in `/api/revenue`. Optional in `/api/orders`, but both or neither. A time (`2026-11-06T00:00:00Z`) is rejected. |
 | `limit` | query of `/api/orders` and `/api/metrics/top-customers` | Optional. Digits only, between `1` and `100`. |
+| `customer_email` | query of `/api/orders` | Optional. Text of 1 to 254 characters: the start of an email. It does not have to be a whole email. Compared as text, so `%` and `_` are ordinary characters. |
+| `type` | query of `/api/orders` | Optional. `sale` or `refund`. |
+| `status` | query of `/api/orders` | Optional. `completed`, the only status an order can have today. Any other value is rejected, not answered with an empty list. |
+| `min_amount`, `max_amount` | query of `/api/orders` | Optional, each on its own. Digits only, cents, between `1` and `100000000`; `min_amount` not above `max_amount`. Both are inclusive. |
+| `cursor` | query of `/api/orders` | Optional. A `next_cursor` value returned by this endpoint, sent back unchanged. |
 
 A refund is an order with a positive `total_amount` and `"type": "refund"`.
 How it counts is in [Money rules](#money-rules).
@@ -75,11 +80,12 @@ Revenue and metrics follow the same rules, defined once in
   "total_amount": 5000,
   "type": "sale",
   "status": "completed",
-  "created_at": "2026-11-06 02:28:37"
+  "created_at": "2026-11-06T02:28:37.000Z"
 }
 ```
 
-`created_at` is UTC. `id`, `merchant_id`, `status` and `created_at` are set by
+`created_at` is UTC and always in this format. `status` is always
+`"completed"`: nothing in the system changes it yet. `id`, `merchant_id`, `status` and `created_at` are set by
 the server; sending them in a body has no effect.
 
 ## Endpoints
@@ -88,12 +94,50 @@ the server; sending them in a body has no effect.
 No auth. Returns `{ "ok": true }`.
 
 ### `GET /api/orders`
-Orders of the merchant, newest first. Returns `{ "orders": [Order] }`.
+Lists and searches the merchant's orders. With no parameters it returns the
+100 newest. Every filter is optional and they combine with AND.
 
-| Query | Default | Notes |
+| Query | Default | Matches |
 |---|---|---|
-| `from`, `to` | none | Both or neither. See [Input rules](#input-rules). |
-| `limit` | 100 | 1 to 100. |
+| `customer_email` | none | Orders whose customer email **starts with** this text, ignoring case (`ana` matches `Ana.Lopez@example.com`, not `mariana@example.com`). Case is ignored for the letters A to Z only. |
+| `type` | none | `sale` or `refund`. |
+| `status` | none | `completed`. |
+| `from`, `to` | none | Created on or after `from` and before `to` (UTC days). Both or neither. |
+| `min_amount`, `max_amount` | none | `total_amount` in cents, bounds included. A refund is matched by its positive amount. |
+| `limit` | 100 | Page size, 1 to 100. |
+| `cursor` | none | Continue after the page that returned it. |
+
+The rules for each value are in [Input rules](#input-rules).
+
+```json
+{ "orders": [Order], "next_cursor": "WyIyMDI2LTEx..." }
+```
+
+**Order.** Newest first by `created_at`; orders created in the same
+millisecond are ordered by `id`, descending. There is no sort parameter.
+
+**Pagination.** `next_cursor` is `null` on the last page. Otherwise send it
+back as `cursor`, with the same filters, to get the next page:
+
+```sh
+curl -H "Authorization: Bearer $KEY" \
+  "http://localhost:3000/api/orders?customer_email=ana&type=refund&limit=25"
+curl -H "Authorization: Bearer $KEY" \
+  "http://localhost:3000/api/orders?customer_email=ana&type=refund&limit=25&cursor=WyIyMDI2LTEx..."
+```
+
+- The cursor is opaque: do not build or edit one. It only marks a position,
+  so it cannot be used to read another merchant's orders.
+- Pages do not overlap and skip nothing, also when orders are created while a
+  client is paging: a new order is newer than every cursor, so it shows up at
+  the start of a new search, not in the middle of this one.
+- There is no total count. To know whether there is more, check `next_cursor`.
+- Filters are not stored in the cursor. Changing them between pages gives the
+  next page of the new search from that position on.
+
+Rows stored before validation are listed and can be found like any other, but
+a row with a `type` that is not `sale` / `refund` never matches the `type`
+filter.
 
 ### `GET /api/orders/:id`
 Returns `{ "order": Order }`.
@@ -199,6 +243,12 @@ For a client written against the first version of this API:
   time or that are not real dates; decimal or non-positive amounts; `type`
   other than `sale` / `refund`; a `customer_email` not shaped like an email;
   any parameter or field that is an array or an object.
+- **`created_at`.** Always `2026-11-06T02:28:37.000Z`. Orders created through
+  the API used to answer `2026-11-06 02:28:37`; it is the same instant in UTC.
+- **`GET /api/orders`.** The response has a new field, `next_cursor`.
+  `customer_email`, `type`, `status`, `min_amount`, `max_amount` and `cursor`
+  used to be ignored; they now filter, and an invalid value is a `400`
+  (`type=banana`, `status=pending`).
 - **Figures.** Refunds are not added as sales. `revenue_cents` subtracts them,
   `total_orders`, `unique_customers` and `avg_order_value_cents` count sales
   only, and top-customers ranks by net spent. The response shapes are the

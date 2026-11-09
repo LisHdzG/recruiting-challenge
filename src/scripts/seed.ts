@@ -1,4 +1,4 @@
-import { db, initSchema, hasApiKeyColumn } from '../db.js';
+import { db, initSchema, hasApiKeyColumn, migrateOrders } from '../db.js';
 import { issueApiKey } from '../api-keys.js';
 import { randomUUID } from 'node:crypto';
 
@@ -23,7 +23,9 @@ function randomDateInLast90Days(): string {
 }
 
 /**
- * Seeds demo data when there are no orders. Returns the API keys issued to
+ * Seeds demo data when there are no orders, and leaves the orders table
+ * migrated (one date format, indexes), so a new database needs no
+ * `npm run migrate`. Returns the API keys issued to
  * merchants created by this run; they cannot be read back later.
  */
 export function seedIfEmpty(): Array<{ merchantId: string; apiKey: string }> {
@@ -67,6 +69,8 @@ export function seedIfEmpty(): Array<{ merchantId: string; apiKey: string }> {
     }
   });
   insertMany();
+  // A database created here is born up to date: same step as `npm run migrate`.
+  migrateOrders();
   console.log(`[seed] inserted ${issued.length} merchants and 80 orders`);
   return issued;
 }

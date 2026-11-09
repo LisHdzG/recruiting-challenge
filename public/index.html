@@ -17,6 +17,13 @@
       th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #ccc4; }
       th { font-weight: 600; opacity: 0.8; }
       .muted { opacity: 0.6; }
+      .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; align-items: end; }
+      .filters label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
+      .filters input, .filters select { font: inherit; padding: 0.3rem; min-width: 0; }
+      .filters .actions { display: flex; gap: 0.5rem; }
+      .error { color: #c0392b; margin: 0.75rem 0 0; white-space: pre-line; }
+      .amount { text-align: right; }
+      #load-more { margin-top: 1rem; }
     </style>
   </head>
   <body>
@@ -48,13 +55,50 @@
     </section>
 
     <section>
-      <h2>Recent orders</h2>
+      <h2>Orders</h2>
+      <form id="orders-form" class="filters">
+        <label>Email starts with
+          <input name="customer_email" type="text" maxlength="254" autocomplete="off" placeholder="ana@" />
+        </label>
+        <label>Type
+          <select name="type">
+            <option value="">All</option>
+            <option value="sale">sale</option>
+            <option value="refund">refund</option>
+          </select>
+        </label>
+        <label>Status
+          <select name="status">
+            <option value="">All</option>
+            <option value="completed">completed</option>
+          </select>
+        </label>
+        <label>From (UTC day)
+          <input name="from" type="date" />
+        </label>
+        <label>To (UTC day, included)
+          <input name="to" type="date" />
+        </label>
+        <label>Min amount ($)
+          <input name="min_amount" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" />
+        </label>
+        <label>Max amount ($)
+          <input name="max_amount" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" />
+        </label>
+        <div class="actions">
+          <button type="submit">Search</button>
+          <button type="reset">Clear</button>
+        </div>
+      </form>
+      <p id="orders-error" class="error" role="alert" hidden></p>
       <table>
         <thead>
-          <tr><th>Date</th><th>Customer</th><th>Type</th><th>Amount</th></tr>
+          <tr><th>Date (UTC)</th><th>Customer</th><th>Type</th><th>Status</th><th class="amount">Amount</th></tr>
         </thead>
         <tbody id="orders-tbody"></tbody>
       </table>
+      <p id="orders-status" class="muted"></p>
+      <button id="load-more" type="button" hidden>Load more</button>
     </section>
 
     <script src="/app.js"></script>

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ValidationError,
   MAX_TOTAL_AMOUNT,
+  encodeOrderCursor,
   findNestedFields,
   isCalendarDate,
   parseDateRange,
@@ -187,5 +188,77 @@ test('order body: every invalid field is reported in one error', () => {
   assert.deepEqual(
     rejectedFields(() => parseOrderBody({ customer_email: [], total_amount: 777.5, type: ['a', 'b'] })),
     ['customer_email', 'total_amount', 'type'],
+  );
+});
+
+// --- order list filters -------------------------------------------------------
+
+test('order filters: every filter left out means no filter, and the default limit', () => {
+  assert.deepEqual(parseOrderListQuery({}), { limit: 100 });
+  assert.deepEqual(parseOrderListQuery(undefined), { limit: 100 });
+});
+
+test('order filters: valid values come back typed', () => {
+  const cursor = encodeOrderCursor({ created_at: '2026-11-06T02:28:37.000Z', id: 'abc' });
+  assert.deepEqual(
+    parseOrderListQuery({
+      customer_email: 'Ana', type: 'refund', status: 'completed', from: '2026-01-01', to: '2026-02-01',
+      min_amount: '100', max_amount: '5000', limit: '25', cursor,
+    }),
+    {
+      customer_email: 'Ana', type: 'refund', status: 'completed', from: '2026-01-01', to: '2026-02-01',
+      min_amount: 100, max_amount: 5000, limit: 25, cursor: { created_at: '2026-11-06T02:28:37.000Z', id: 'abc' },
+    },
+  );
+  // The email filter is the start of an email: it does not have to look like one, and is not trimmed.
+  assert.equal(parseOrderListQuery({ customer_email: ' a%_' }).customer_email, ' a%_');
+  assert.deepEqual(parseOrderListQuery({ min_amount: '700' }), { min_amount: 700, limit: 100 });
+  assert.deepEqual(parseOrderListQuery({ max_amount: '700' }), { max_amount: 700, limit: 100 });
+  assert.deepEqual(parseOrderListQuery({ min_amount: '700', max_amount: '700' }), { min_amount: 700, max_amount: 700, limit: 100 });
+});
+
+test('order filters: status accepts only the statuses that exist', () => {
+  assert.equal(parseOrderListQuery({ status: 'completed' }).status, 'completed');
+  for (const bad of ['pending', 'cancelled', 'refunded', 'Completed', '', ' completed']) {
+    assert.deepEqual(rejectedFields(() => parseOrderListQuery({ status: bad })), ['status'], bad);
+  }
+});
+
+test('order filters: type accepts only sale or refund', () => {
+  for (const bad of ['banana', 'SALE', '', 'sale ', 'sale,refund']) {
+    assert.deepEqual(rejectedFields(() => parseOrderListQuery({ type: bad })), ['type'], bad);
+  }
+});
+
+test('order filters: amounts are whole cents within the same limits as an order', () => {
+  for (const field of ['min_amount', 'max_amount']) {
+    for (const bad of ['0', '-1', '12.5', '1e3', 'abc', '', ' 5', '0x10', String(MAX_TOTAL_AMOUNT + 1), 500]) {
+      assert.deepEqual(rejectedFields(() => parseOrderListQuery({ [field]: bad })), [field], `${field}=${JSON.stringify(bad)}`);
+    }
+    assert.equal((parseOrderListQuery({ [field]: String(MAX_TOTAL_AMOUNT) }) as unknown as Record<string, unknown>)[field], MAX_TOTAL_AMOUNT);
+  }
+  assert.deepEqual(rejectedFields(() => parseOrderListQuery({ min_amount: '500', max_amount: '100' })), ['max_amount']);
+});
+
+test('order filters: customer_email is text of 1 to 254 characters', () => {
+  assert.deepEqual(rejectedFields(() => parseOrderListQuery({ customer_email: '' })), ['customer_email']);
+  assert.deepEqual(rejectedFields(() => parseOrderListQuery({ customer_email: 'a'.repeat(255) })), ['customer_email']);
+  assert.deepEqual(rejectedFields(() => parseOrderListQuery({ customer_email: 5 })), ['customer_email']);
+  assert.equal(parseOrderListQuery({ customer_email: 'a'.repeat(254) }).customer_email?.length, 254);
+});
+
+test('order filters: a cursor is accepted only in the shape this API produces', () => {
+  const b64 = (text: string) => Buffer.from(text).toString('base64url');
+  for (const bad of ['', 'abc', '!!', 'a b', b64('{"a":1}'), b64('[]'), b64('["x"]'), b64('["x",1]'), b64('["x","y","z"]'), b64('null'), 'A'.repeat(513), 5]) {
+    assert.deepEqual(rejectedFields(() => parseOrderListQuery({ cursor: bad })), ['cursor'], JSON.stringify(bad));
+  }
+  const odd = { created_at: 'not a date', id: 'u|"\\' };
+  assert.deepEqual(parseOrderListQuery({ cursor: encodeOrderCursor(odd) }).cursor, odd);
+});
+
+test('order filters: all the failures are reported together, in a fixed order', () => {
+  assert.deepEqual(
+    rejectedFields(() => parseOrderListQuery({ customer_email: '', type: 'x', status: 'y', to: '2026-01-01', min_amount: 'z', max_amount: '0', limit: '0', cursor: '!' })),
+    ['customer_email', 'type', 'status', 'from', 'min_amount', 'max_amount', 'limit', 'cursor'],
   );
 });

@@ -4,7 +4,7 @@ if (!process.env.DB_PATH) process.env.DB_PATH = ':memory:';
 import { test, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { Router } from 'express';
-import { initSchema, db } from '../src/db.js';
+import { initSchema, migrateOrders, db } from '../src/db.js';
 import { authMiddleware } from '../src/auth.js';
 import { issueApiKey } from '../src/api-keys.js';
 import { ordersRouter } from '../src/routes/orders.js';
@@ -13,6 +13,7 @@ import { validated } from '../src/validate-request.js';
 import { startApp, fields, type Reply } from './helpers/app.js';
 
 initSchema();
+migrateOrders(); // the indexes the order list needs
 db.prepare(`INSERT INTO merchants (id, name) VALUES ('m_a', 'A'), ('m_b', 'B')`).run();
 const keyA = issueApiKey('m_a');
 

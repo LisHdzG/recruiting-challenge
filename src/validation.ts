@@ -30,6 +30,10 @@ export const MAX_TOTAL_AMOUNT = 100_000_000; // cents
 export const MAX_EMAIL_LENGTH = 254;
 export const ORDER_TYPES = ['sale', 'refund'] as const;
 export type OrderType = (typeof ORDER_TYPES)[number];
+/** Every status an order can have. Nothing in the system changes it, so there is one. */
+export const ORDER_STATUSES = ['completed'] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+export const MAX_CURSOR_LENGTH = 512;
 
 type Fields = Record<string, unknown>;
 
@@ -138,13 +142,124 @@ export function parseLimit(query: unknown, opts: { defaultValue: number; max?: n
 // One parser per endpoint input. Routes use these, nothing else.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Order list filters
+// ---------------------------------------------------------------------------
+
+/** A filter that must be one of a fixed list of words. Left out means "any". */
+function readOneOf<T extends string>(fields: Fields, field: string, allowed: readonly T[], issues: ValidationIssue[]): T | undefined {
+  const raw = fields[field];
+  if (raw === undefined) return undefined;
+  if (!allowed.includes(raw as T)) {
+    issues.push({ field, issue: `must be ${allowed.map((v) => `"${v}"`).join(' or ')} (or left out)` });
+    return undefined;
+  }
+  return raw as T;
+}
+
+/**
+ * `customer_email` as a filter: the start of an email, not a whole one, so the
+ * email format rule does not apply. Any text of 1 to 254 characters; it is
+ * compared as text, never used as a pattern.
+ */
+function readEmailPrefix(fields: Fields, issues: ValidationIssue[]): string | undefined {
+  const raw = fields.customer_email;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string' || raw.length < 1 || raw.length > MAX_EMAIL_LENGTH) {
+    issues.push({ field: 'customer_email', issue: `must be text of 1 to ${MAX_EMAIL_LENGTH} characters: the start of an email` });
+    return undefined;
+  }
+  return raw;
+}
+
+function readAmount(fields: Fields, field: string, issues: ValidationIssue[]): number | undefined {
+  const raw = fields[field];
+  if (raw === undefined) return undefined;
+  const value = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!(value >= 1 && value <= MAX_TOTAL_AMOUNT)) {
+    issues.push({ field, issue: `must be a whole number of cents between 1 and ${MAX_TOTAL_AMOUNT}` });
+    return undefined;
+  }
+  return value;
+}
+
+function readAmountRange(fields: Fields, issues: ValidationIssue[]): { min_amount?: number; max_amount?: number } {
+  const min_amount = readAmount(fields, 'min_amount', issues);
+  const max_amount = readAmount(fields, 'max_amount', issues);
+  if (min_amount !== undefined && max_amount !== undefined && min_amount > max_amount) {
+    issues.push({ field: 'max_amount', issue: 'must not be lower than `min_amount`' });
+    return {};
+  }
+  return {
+    ...(min_amount !== undefined && { min_amount }),
+    ...(max_amount !== undefined && { max_amount }),
+  };
+}
+
+/** Where a page of orders ended: the last row's sort key. */
+export interface OrderCursor {
+  created_at: string;
+  id: string;
+}
+
+/**
+ * The cursor a client sends back to get the next page. Opaque to the client:
+ * base64url of `[created_at, id]`. It only says where to continue; the
+ * merchant always comes from the API key, so a cursor made up by a client
+ * cannot reach another merchant's orders.
+ */
+export function encodeOrderCursor(last: OrderCursor): string {
+  return Buffer.from(JSON.stringify([last.created_at, last.id]), 'utf8').toString('base64url');
+}
+
+function readCursor(fields: Fields, issues: ValidationIssue[]): OrderCursor | undefined {
+  const raw = fields.cursor;
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'string' && raw.length <= MAX_CURSOR_LENGTH && /^[A-Za-z0-9_-]+$/.test(raw)) {
+    try {
+      const decoded: unknown = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+      if (Array.isArray(decoded) && decoded.length === 2 && typeof decoded[0] === 'string' && typeof decoded[1] === 'string') {
+        return { created_at: decoded[0], id: decoded[1] };
+      }
+    } catch {}
+  }
+  issues.push({ field: 'cursor', issue: 'must be a `next_cursor` value returned by this endpoint' });
+  return undefined;
+}
+
+export interface OrderListQuery extends DateRange {
+  /** Start of the customer email, compared without regard to case. */
+  customer_email?: string;
+  type?: OrderType;
+  status?: OrderStatus;
+  /** Cents, inclusive. */
+  min_amount?: number;
+  /** Cents, inclusive. */
+  max_amount?: number;
+  cursor?: OrderCursor;
+  limit: number;
+}
+
 /** `GET /api/orders` */
-export function parseOrderListQuery(query: unknown): DateRange & { limit: number } {
+export function parseOrderListQuery(query: unknown): OrderListQuery {
   return run((issues) => {
     const fields = isPlainObject(query) ? query : {};
+    const customer_email = readEmailPrefix(fields, issues);
+    const type = readOneOf(fields, 'type', ORDER_TYPES, issues);
+    const status = readOneOf(fields, 'status', ORDER_STATUSES, issues);
     const range = readDateRange(fields, { required: false }, issues);
+    const amounts = readAmountRange(fields, issues);
     const limit = readLimit(fields, { defaultValue: 100 }, issues);
-    return { ...range, limit };
+    const cursor = readCursor(fields, issues);
+    return {
+      ...(customer_email !== undefined && { customer_email }),
+      ...(type !== undefined && { type }),
+      ...(status !== undefined && { status }),
+      ...range,
+      ...amounts,
+      ...(cursor !== undefined && { cursor }),
+      limit,
+    };
   });
 }
 

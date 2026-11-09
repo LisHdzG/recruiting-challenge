@@ -3,7 +3,7 @@ if (!process.env.DB_PATH) process.env.DB_PATH = ':memory:';
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initSchema, db } from '../src/db.js';
+import { initSchema, migrateOrders, db } from '../src/db.js';
 import { ordersDal } from '../src/dal/orders-dal.js';
 
 test('orders DAL: create + listByMerchant returns the order', () => {
@@ -18,7 +18,8 @@ test('orders DAL: create + listByMerchant returns the order', () => {
     status: 'completed',
   });
   assert.equal(created.id, 'o1');
-  const list = ordersDal.listByMerchant('m_test');
+  migrateOrders(); // the indexes the list needs
+  const list = ordersDal.listByMerchant('m_test').orders;
   assert.equal(list.length, 1);
   assert.equal(list[0]!.total_amount, 5000);
 });

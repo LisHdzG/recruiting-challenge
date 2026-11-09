@@ -40,7 +40,8 @@ The database is SQLite, kept in `data/dashboard.db`. `npm run seed` creates two 
 **If you already have a `data/dashboard.db` from an earlier version:**
 
 - From before API keys existed: run `npm run migrate` once. It adds the key column and prints a key for each existing merchant; the server will not start until you do.
-- From before input validation existed: no migration is needed and the server starts as usual. See [Rows stored before validation](#rows-stored-before-validation).
+- From before order search existed: run `npm run migrate` once. It rewrites every order's `created_at` to one format (`2026-11-06T02:28:37.000Z`, the same instant) and creates the two indexes the order list uses; the server will not start until you do. A database created by `npm run seed` is already up to date.
+- From before input validation existed: no migration is needed for that. See [Rows stored before validation](#rows-stored-before-validation).
 
 ### Rows stored before validation
 
@@ -63,6 +64,8 @@ The API validates everything a client sends before it reaches a query and answer
 ```sh
 npm test     # run the (intentionally thin) test suite
 ```
+
+**Order search (Feature C).** `GET /api/orders` takes filters (start of the customer email, type, status, date range, amount range) and pages with a cursor; the dashboard's **Orders** section is a form over it. The contract is in [`docs/api.md`](./docs/api.md#get-apiorders), the design and the measurements with 200,000 orders in [`docs/architecture.md`](./docs/architecture.md#order-search).
 
 To use the dashboard, paste a merchant's API key at the top of the page. The client sends it as `Authorization: Bearer <key>` on every API request, and the server resolves the merchant from the key — see `src/auth.ts` and [`docs/api.md`](./docs/api.md).
 

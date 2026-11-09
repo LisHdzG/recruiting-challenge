@@ -30,7 +30,7 @@ db.exec(`
 
 test('migrate: adds the column, issues a key per existing merchant and keeps the data', () => {
   assert.equal(hasApiKeyColumn(), false);
-  const issued = migrate();
+  const { issued } = migrate();
   assert.equal(hasApiKeyColumn(), true);
   assert.deepEqual(issued.map((k) => k.merchantId), ['m_old1', 'm_old2']);
   for (const { merchantId, apiKey } of issued) {
@@ -39,13 +39,13 @@ test('migrate: adds the column, issues a key per existing merchant and keeps the
   assert.equal(ordersDal.getById('o_old', 'm_old1')?.total_amount, 100);
 
   // Running it again must not replace keys that are already in use.
-  assert.deepEqual(migrate(), []);
+  assert.deepEqual(migrate().issued, []);
   assert.equal(findMerchantIdByApiKey(issued[0]!.apiKey), 'm_old1');
 });
 
 test('migrate: a merchant added later without a key gets one on the next run', () => {
   db.prepare(`INSERT INTO merchants (id, name) VALUES ('m_new', 'New')`).run();
-  const issued = migrate();
+  const { issued } = migrate();
   assert.deepEqual(issued.map((k) => k.merchantId), ['m_new']);
 });
 

@@ -2,14 +2,14 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { ordersDal } from '../dal/orders-dal.js';
 import { validated } from '../validate-request.js';
-import { parseOrderListQuery, parseOrderBody } from '../validation.js';
+import { parseOrderListQuery, parseOrderBody, ORDER_STATUSES } from '../validation.js';
 
 export const ordersRouter = Router();
 
 ordersRouter.get(
   '/',
   validated({ query: parseOrderListQuery }, ({ query, merchantId }, res) => {
-    res.json({ orders: ordersDal.listByMerchant(merchantId, query) });
+    res.json(ordersDal.listByMerchant(merchantId, query));
   }),
 );
 
@@ -34,7 +34,7 @@ ordersRouter.post(
       customer_email: body.customer_email,
       total_amount: body.total_amount,
       type: body.type,
-      status: 'completed',
+      status: ORDER_STATUSES[0],
     });
     res.status(201).json({ order });
   }),

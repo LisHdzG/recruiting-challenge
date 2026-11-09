@@ -10,8 +10,9 @@ import assert from 'node:assert/strict';
 const dir = mkdtempSync(join(tmpdir(), 'dashboard-test-'));
 process.env.DB_PATH = join(dir, 'test.db');
 
-const { db, initSchema } = await import('../src/db.js');
+const { db, initSchema, migrateOrders } = await import('../src/db.js');
 initSchema();
+migrateOrders(); // the indexes the order list needs
 const { issueApiKey } = await import('../src/api-keys.js');
 const { authMiddleware } = await import('../src/auth.js');
 const { ordersRouter } = await import('../src/routes/orders.js');

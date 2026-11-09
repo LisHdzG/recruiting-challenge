@@ -3,7 +3,7 @@ if (!process.env.DB_PATH) process.env.DB_PATH = ':memory:';
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { db } from '../src/db.js';
+import { db, pendingMigrations } from '../src/db.js';
 import { seedIfEmpty } from '../src/scripts/seed.js';
 import { findMerchantIdByApiKey } from '../src/api-keys.js';
 
@@ -17,6 +17,10 @@ test('seed: issues one working key per merchant, and only the first time', () =>
 
   assert.deepEqual(seedIfEmpty(), []);
   assert.equal((db.prepare(`SELECT COUNT(*) AS n FROM orders`).get() as { n: number }).n, 80);
+});
+
+test('seed: a database it creates needs no migration, so the server starts right after', () => {
+  assert.deepEqual(pendingMigrations(), []);
 });
 
 test('seed: reseeding orders for existing merchants keeps their keys', () => {
