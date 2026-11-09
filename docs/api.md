@@ -19,6 +19,28 @@ Keys are printed once by `npm run seed` (new database) or `npm run migrate`
 (database created before API keys). Only their SHA-256 hash is stored, so a
 lost key cannot be recovered.
 
+## Input rules
+
+Nothing a client sends is trusted. Every query parameter and body field is
+checked before any query runs; a request that breaks a rule is rejected with
+`400` (see [Errors](#errors)) and nothing is stored.
+
+**Everywhere, on every authenticated route:** no query parameter and no body field may
+be an array or an object. That includes a repeated parameter
+(`?limit=1&limit=2`), `?limit[]=1` and `?limit[a]=1`. Unknown parameters and
+fields with a single value are ignored.
+
+| Field | Where | Rule |
+|---|---|---|
+| body | `POST /api/orders` | A JSON object, at most 100 KB. |
+| `customer_email` | body | Required. Text shaped like `name@example.com`, with no spaces and no `<` or `>`, at most 254 characters. Stored as sent (no trimming, no lower-casing). |
+| `total_amount` | body | Required. A JSON number that is an integer between `1` and `100000000` (cents). No decimals, no strings. |
+| `type` | body | Optional. `"sale"` or `"refund"`. Leaving it out means `"sale"`; `null` or any other value is rejected. |
+| `from`, `to` | query of `/api/orders` and `/api/revenue` | `YYYY-MM-DD`, a date that exists, with `from` earlier than `to`. Days are UTC; `from` is inclusive, `to` is exclusive. Required in `/api/revenue`. Optional in `/api/orders`, but both or neither. A time (`2026-11-06T00:00:00Z`) is rejected. |
+| `limit` | query of `/api/orders` and `/api/metrics/top-customers` | Optional. Digits only, between `1` and `100`. |
+
+A refund is an order with a positive `total_amount` and `"type": "refund"`.
+
 ## Order object
 
 ```json
@@ -33,7 +55,11 @@ lost key cannot be recovered.
 }
 ```
 
-`created_at` is UTC.
+`created_at` is UTC. `id`, `merchant_id`, `status` and `created_at` are set by
+the server; sending them in a body has no effect.
+
+Orders written before these rules existed may hold values the API would reject
+today. The README has a query to list them.
 
 ## Endpoints
 
@@ -45,28 +71,33 @@ Orders of the merchant, newest first. Returns `{ "orders": [Order] }`.
 
 | Query | Default | Notes |
 |---|---|---|
-| `from`, `to` | none | Applied only when both are sent. `from` is inclusive, `to` is exclusive. |
-| `limit` | 100 | |
+| `from`, `to` | none | Both or neither. See [Input rules](#input-rules). |
+| `limit` | 100 | 1 to 100. |
 
 ### `GET /api/orders/:id`
 Returns `{ "order": Order }`.
 `404 { "error": "not_found" }` if the ID does not exist or belongs to another merchant.
 
 ### `POST /api/orders`
-Body: `{ "customer_email": string, "total_amount": number, "type"?: "sale" | "refund" }`.
-`type` defaults to `"sale"`. The order is created for the merchant of the key.
+Body: `{ "customer_email": string, "total_amount": integer, "type"?: "sale" | "refund" }`.
+The order is created for the merchant of the key.
 
 Returns `201 { "order": Order }`.
-`400 { "error": "invalid_body" }` if `customer_email` is missing or `total_amount` is not a number.
 
-### `GET /api/revenue?from=...&to=...`
-Sum of `total_amount` in the range (`from` inclusive, `to` exclusive). Both are required.
+```sh
+curl -X POST http://localhost:3000/api/orders \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"customer_email":"ana@example.com","total_amount":5000}'
+```
+
+### `GET /api/revenue?from=YYYY-MM-DD&to=YYYY-MM-DD`
+Sum of `total_amount` in the range. Both dates are required.
 
 ```json
 { "merchant_id": "m_acme", "from": "2026-10-01", "to": "2026-11-01", "revenue_cents": 412118, "revenue": 4121.18 }
 ```
 
-`400 { "error": "missing_date_range" }` if either date is missing.
+To include today, send tomorrow's date as `to`.
 
 ### `GET /api/metrics/summary`
 ```json
@@ -74,7 +105,7 @@ Sum of `total_amount` in the range (`from` inclusive, `to` exclusive). Both are 
 ```
 
 ### `GET /api/metrics/top-customers`
-Customers by total spent, highest first. Query: `limit` (default 5).
+Customers by total spent, highest first. Query: `limit` (default 5, 1 to 100).
 
 ```json
 { "customers": [{ "customer_email": "carla@example.com", "order_count": 9, "total_spent": 138049 }] }
@@ -82,9 +113,43 @@ Customers by total spent, highest first. Query: `limit` (default 5).
 
 ## Errors
 
-| Status | Body |
-|---|---|
-| 400 | `{ "error": "invalid_body" }` or `{ "error": "missing_date_range", "detail": "..." }` |
-| 401 | `{ "error": "unauthorized" }` |
-| 404 | `{ "error": "not_found" }` |
-| 500 | `{ "error": "internal_error" }` (details go to the server log only) |
+Every error caused by the request has the same shape and names each field that
+failed, all of them at once:
+
+```json
+{
+  "error": "invalid_request",
+  "details": [
+    { "field": "total_amount", "issue": "must be an integer number of cents between 1 and 100000000" },
+    { "field": "type", "issue": "must be \"sale\" or \"refund\" (or left out, which means \"sale\")" }
+  ]
+}
+```
+
+`field` is the parameter or body field; `body` means the body as a whole,
+`path` the URL path and `Content-Type` the header. The `issue` text is meant
+for people and may be reworded; match on `error` and `field`.
+
+| Status | `error` | When |
+|---|---|---|
+| 400 | `invalid_request` | A rule in [Input rules](#input-rules) is broken, the body is not valid JSON, or the path is not valid URL encoding. |
+| 401 | `unauthorized` | Missing, malformed or unknown API key. No `details`. |
+| 404 | `not_found` | Order not found for this merchant. No `details`. |
+| 413 | `payload_too_large` | Body over 100 KB. |
+| 415 | `unsupported_media_type` | Body sent in a charset or encoding the server does not read. |
+| 500 | `internal_error` | A failure on the server. No `details`; they go to the server log only. |
+
+Authentication comes first: a request without a valid key gets `401` whatever
+else is wrong with its parameters or fields. The one exception is the body
+itself, which is read before authentication, so a body that is not valid JSON,
+is too large or has an unsupported charset gets `400` / `413` / `415` even
+without a key.
+
+**Changed from earlier versions:** `invalid_body` and `missing_date_range` no
+longer exist; both are now `invalid_request` with `details`. Requests that used
+to be accepted or silently ignored are now `400`: `limit` of `0`, negative or
+above 100, `from` without `to` in `/api/orders`, dates with a time, decimal or
+non-positive amounts, and `type` other than `sale` / `refund`.
+
+A path under `/api` that matches no route still answers with Express's default
+HTML `404` page.

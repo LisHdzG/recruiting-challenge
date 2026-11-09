@@ -52,15 +52,15 @@ async function refresh() {
   revenue30dEl.textContent = money(revenue.revenue_cents ?? 0);
 
   const ordersRes = await api('/api/orders?limit=10');
-  ordersTbody.innerHTML = '';
+  // Order fields come from clients, so they are shown as text, never parsed as HTML.
+  ordersTbody.replaceChildren();
   for (const o of ordersRes.orders ?? []) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${new Date(o.created_at).toLocaleDateString()}</td>
-      <td>${o.customer_email}</td>
-      <td>${o.type}</td>
-      <td>${money(o.total_amount)}</td>
-    `;
+    for (const text of [new Date(o.created_at).toLocaleDateString(), o.customer_email, o.type, money(o.total_amount)]) {
+      const td = document.createElement('td');
+      td.textContent = String(text);
+      tr.appendChild(td);
+    }
     ordersTbody.appendChild(tr);
   }
 }
@@ -72,7 +72,7 @@ function showSignedOut(message) {
   keyError.textContent = message ?? '';
   // Do not leave the previous merchant's numbers on screen.
   for (const el of [totalOrdersEl, uniqueCustomersEl, avgOrderEl, revenue30dEl]) el.textContent = '—';
-  ordersTbody.innerHTML = '';
+  ordersTbody.replaceChildren();
 }
 
 async function signIn() {

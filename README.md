@@ -37,7 +37,22 @@ If port 3000 is taken: `PORT=3055 npm run dev`.
 
 The database is SQLite, kept in `data/dashboard.db`. `npm run seed` creates two merchants (`m_acme`, `m_bistro`) and ~80 orders, and prints an API key for each merchant. Copy the keys: only their hash is stored, so they cannot be shown again. To start over, delete the file and run `npm run seed`. The server never seeds on its own.
 
-If you already have a `data/dashboard.db` from before API keys existed, run `npm run migrate` once. It adds the key column and prints a key for each existing merchant; the server will not start until you do.
+**If you already have a `data/dashboard.db` from an earlier version:**
+
+- From before API keys existed: run `npm run migrate` once. It adds the key column and prints a key for each existing merchant; the server will not start until you do.
+- From before input validation existed: no migration is needed and the server starts as usual, but the file may hold orders the API would reject today (negative or decimal amounts, a `type` other than `sale` / `refund`, text that is not an email). Validation stops new ones; it does not fix or delete what is already stored, and those rows keep counting in revenue and metrics until you decide what to do with them. To list them, run this read-only query (`sqlite3 data/dashboard.db`). It follows the API rules closely, not exactly: the email check is an approximation.
+
+```sql
+SELECT id, merchant_id, customer_email, total_amount, type
+FROM orders
+WHERE typeof(total_amount) <> 'integer' OR total_amount < 1 OR total_amount > 100000000
+   OR type NOT IN ('sale', 'refund')
+   OR typeof(customer_email) <> 'text' OR length(customer_email) > 254
+   OR customer_email NOT LIKE '%_@_%._%' OR customer_email LIKE '%@%@%'
+   OR customer_email GLOB '*[ <>]*';
+```
+
+The API validates everything a client sends before it reaches a query and answers `400` with the fields that failed; see [`docs/api.md`](./docs/api.md#input-rules). Clients written against an earlier version should read "Changed from earlier versions" there: some requests that used to be accepted are now rejected.
 
 ```sh
 npm test     # run the (intentionally thin) test suite
@@ -45,7 +60,7 @@ npm test     # run the (intentionally thin) test suite
 
 To use the dashboard, paste a merchant's API key at the top of the page. The client sends it as `Authorization: Bearer <key>` on every API request, and the server resolves the merchant from the key — see `src/auth.ts` and [`docs/api.md`](./docs/api.md).
 
-**Known issue, not fixed yet:** the dashboard renders `customer_email` as HTML (XSS). A malicious email stored in an order can run script in the dashboard and read the API key kept in the browser tab.
+The dashboard shows order fields (customer email, type) as plain text. Text stored in an order is never interpreted as HTML, including orders stored before validation existed.
 
 ---
 
