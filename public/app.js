@@ -1,12 +1,34 @@
-const select = document.getElementById('merchant-select');
+const keyForm = document.getElementById('key-form');
+const keyInput = document.getElementById('key-input');
+const keyError = document.getElementById('key-error');
+const sessionEl = document.getElementById('session');
+const merchantIdEl = document.getElementById('merchant-id');
+const signOutBtn = document.getElementById('sign-out');
 const totalOrdersEl = document.getElementById('total-orders');
 const uniqueCustomersEl = document.getElementById('unique-customers');
 const avgOrderEl = document.getElementById('avg-order');
 const revenue30dEl = document.getElementById('revenue-30d');
 const ordersTbody = document.getElementById('orders-tbody');
 
-function api(path) {
-  return fetch(path, { headers: { 'X-Merchant-Id': select.value } }).then((r) => r.json());
+// The key stays in this tab only: sessionStorage is cleared when the tab closes.
+const KEY_STORAGE = 'dashboard_api_key';
+let apiKey = null;
+try {
+  apiKey = sessionStorage.getItem(KEY_STORAGE);
+} catch {}
+
+function setKey(key) {
+  apiKey = key;
+  try {
+    if (key) sessionStorage.setItem(KEY_STORAGE, key);
+    else sessionStorage.removeItem(KEY_STORAGE);
+  } catch {}
+}
+
+async function api(path) {
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (res.status === 401) throw new Error('unauthorized');
+  return res.json();
 }
 
 function money(cents) {
@@ -19,6 +41,7 @@ function isoDate(d) {
 
 async function refresh() {
   const summary = await api('/api/metrics/summary');
+  merchantIdEl.textContent = summary.merchant_id;
   totalOrdersEl.textContent = summary.total_orders ?? '—';
   uniqueCustomersEl.textContent = summary.unique_customers ?? '—';
   avgOrderEl.textContent = money(summary.avg_order_value_cents ?? 0);
@@ -42,5 +65,35 @@ async function refresh() {
   }
 }
 
-select.addEventListener('change', refresh);
-refresh();
+function showSignedOut(message) {
+  setKey(null);
+  keyForm.hidden = false;
+  sessionEl.hidden = true;
+  keyError.textContent = message ?? '';
+  // Do not leave the previous merchant's numbers on screen.
+  for (const el of [totalOrdersEl, uniqueCustomersEl, avgOrderEl, revenue30dEl]) el.textContent = '—';
+  ordersTbody.innerHTML = '';
+}
+
+async function signIn() {
+  try {
+    await refresh();
+  } catch (err) {
+    if (err.message !== 'unauthorized') throw err;
+    showSignedOut('That API key is not valid.');
+    return;
+  }
+  keyForm.hidden = true;
+  sessionEl.hidden = false;
+  keyError.textContent = '';
+}
+
+keyForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  setKey(keyInput.value.trim());
+  keyInput.value = '';
+  signIn();
+});
+signOutBtn.addEventListener('click', () => showSignedOut());
+
+if (apiKey) signIn();

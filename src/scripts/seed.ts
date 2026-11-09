@@ -1,4 +1,5 @@
-import { db, initSchema } from '../db.js';
+import { db, initSchema, hasApiKeyColumn } from '../db.js';
+import { issueApiKey } from '../api-keys.js';
 import { randomUUID } from 'node:crypto';
 
 const MERCHANTS = [
@@ -21,15 +22,27 @@ function randomDateInLast90Days(): string {
   return new Date(now - offsetMs).toISOString();
 }
 
-export function seedIfEmpty(): void {
+/**
+ * Seeds demo data when there are no orders. Returns the API keys issued to
+ * merchants created by this run; they cannot be read back later.
+ */
+export function seedIfEmpty(): Array<{ merchantId: string; apiKey: string }> {
   initSchema();
+  if (!hasApiKeyColumn()) {
+    throw new Error('This database was created before API keys. Run `npm run migrate` first.');
+  }
   const existing = db.prepare(`SELECT COUNT(*) AS n FROM orders`).get() as { n: number };
-  if (existing.n > 0) return;
+  if (existing.n > 0) return [];
 
   const insertMerchant = db.prepare(
     `INSERT OR IGNORE INTO merchants (id, name) VALUES (?, ?)`,
   );
-  for (const m of MERCHANTS) insertMerchant.run(m.id, m.name);
+  const issued: Array<{ merchantId: string; apiKey: string }> = [];
+  for (const m of MERCHANTS) {
+    if (insertMerchant.run(m.id, m.name).changes === 1) {
+      issued.push({ merchantId: m.id, apiKey: issueApiKey(m.id) });
+    }
+  }
 
   const insertOrder = db.prepare(
     `INSERT INTO orders (id, merchant_id, customer_email, total_amount, type, status, created_at)
@@ -54,10 +67,19 @@ export function seedIfEmpty(): void {
     }
   });
   insertMany();
-  console.log(`[seed] inserted ${MERCHANTS.length} merchants and 80 orders`);
+  console.log(`[seed] inserted ${issued.length} merchants and 80 orders`);
+  return issued;
 }
 
 const isMain = import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith(process.argv[1] ?? '');
 if (isMain) {
-  seedIfEmpty();
+  const issued = seedIfEmpty();
+  for (const { merchantId, apiKey } of issued) {
+    console.log(`[seed] API key for ${merchantId}: ${apiKey}`);
+  }
+  console.log(
+    issued.length > 0
+      ? '[seed] Keys are shown only once. Copy them now.'
+      : '[seed] no new merchants, so no API keys were issued',
+  );
 }

@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "seed": "tsx src/scripts/seed.ts",
+    "migrate": "tsx src/scripts/migrate.ts",
     "test": "cross-env DB_PATH=:memory: node --import tsx --test test/**/*.test.ts",
     "build": "tsc"
   },

@@ -24,12 +24,17 @@
     <p class="muted">Tiny demo dashboard backed by the local API.</p>
 
     <div class="merchant-picker">
-      <label>Logged in as:
-        <select id="merchant-select">
-          <option value="m_acme">Acme Supplies</option>
-          <option value="m_bistro">Bistro Verde</option>
-        </select>
-      </label>
+      <form id="key-form">
+        <label>API key:
+          <input id="key-input" type="password" autocomplete="off" size="40" required />
+        </label>
+        <button type="submit">Sign in</button>
+        <span id="key-error" class="muted"></span>
+      </form>
+      <div id="session" hidden>
+        Signed in as <strong id="merchant-id"></strong>
+        <button id="sign-out" type="button">Sign out</button>
+      </div>
     </div>
 
     <section>

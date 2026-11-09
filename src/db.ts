@@ -17,6 +17,7 @@ export function initSchema(): void {
     CREATE TABLE IF NOT EXISTS merchants (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      api_key_hash TEXT UNIQUE,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -33,4 +34,10 @@ export function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_orders_merchant ON orders(merchant_id);
     CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
   `);
+}
+
+/** False for a database created before API keys existed. `npm run migrate` fixes it. */
+export function hasApiKeyColumn(): boolean {
+  const columns = db.prepare(`PRAGMA table_info(merchants)`).all() as Array<{ name: string }>;
+  return columns.some((c) => c.name === 'api_key_hash');
 }

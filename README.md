@@ -25,6 +25,7 @@ Requirements: **Node 20+**.
 
 ```sh
 npm install
+npm run seed   # demo data + one API key per merchant, shown only once
 npm run dev
 ```
 
@@ -34,13 +35,17 @@ If port 3000 is taken: `PORT=3055 npm run dev`.
 
 **Windows note.** `better-sqlite3` builds a native module on install; if it fails, you'll need Visual Studio build tools or `windows-build-tools`. Modern Node distributions usually ship with what you need. macOS and Linux: no extra setup.
 
-The database is SQLite, kept in `data/dashboard.db`. The first run seeds two merchants (`m_acme`, `m_bistro`) and ~80 orders. Delete the file to reseed.
+The database is SQLite, kept in `data/dashboard.db`. `npm run seed` creates two merchants (`m_acme`, `m_bistro`) and ~80 orders, and prints an API key for each merchant. Copy the keys: only their hash is stored, so they cannot be shown again. To start over, delete the file and run `npm run seed`. The server never seeds on its own.
+
+If you already have a `data/dashboard.db` from before API keys existed, run `npm run migrate` once. It adds the key column and prints a key for each existing merchant; the server will not start until you do.
 
 ```sh
 npm test     # run the (intentionally thin) test suite
 ```
 
-To switch between the two seeded merchants in the dashboard, use the selector at the top of the page. Behind the scenes the client sends an `X-Merchant-Id` header on every API request — see `src/auth.ts`.
+To use the dashboard, paste a merchant's API key at the top of the page. The client sends it as `Authorization: Bearer <key>` on every API request, and the server resolves the merchant from the key — see `src/auth.ts` and [`docs/api.md`](./docs/api.md).
+
+**Known issue, not fixed yet:** the dashboard renders `customer_email` as HTML (XSS). A malicious email stored in an order can run script in the dashboard and read the API key kept in the browser tab.
 
 ---
 

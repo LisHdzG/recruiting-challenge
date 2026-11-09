@@ -14,7 +14,7 @@ ordersRouter.get('/', (req, res) => {
 });
 
 ordersRouter.get('/:id', (req, res) => {
-  const order = ordersDal.getById(req.params.id);
+  const order = ordersDal.getById(req.params.id, req.merchantId!);
   if (!order) {
     res.status(404).json({ error: 'not_found' });
     return;
