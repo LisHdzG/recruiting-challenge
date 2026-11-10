@@ -1,4 +1,4 @@
-# Validation design — <your name>
+# Validation design — Hernández Guzmán Marian Lisette
 
 > **Write this yourself, without AI assistance.** Spell-check is fine. AI-drafted validation design is an automatic decline — this artifact measures *your* judgment about how to make AI-augmented code safe to ship, which is the load-bearing architect-tier signal.
 >
@@ -6,10 +6,7 @@
 
 ## Authorship declaration
 
-> Replace this block with one of:
->
-> - *"I wrote this validation design entirely without AI assistance. The only tool I used was spell-check."*
-> - *"I used AI on this validation design for the following limited purposes: <list each use>. Everything else is mine."*
+I wrote this validation design entirely without AI assistance. The only tool I used was spell-check.
 
 ---
 
@@ -33,22 +30,42 @@ Forms a gate can take, in rough order of robustness:
 
 For each issue *class* you addressed (not each instance — group by class):
 
-### Class 1 — <name the class, e.g. "Multi-tenant authorization (IDOR)">
+### Class 1
 
-- **Instances I fixed:** <list, e.g. "Bug B in GET /api/orders/:id">
-- **The gate I built (or would build):** <specific name and shape>
-- **What this gate would catch that a regression test would miss:** <the next instance, the next refactor, the next team member>
-- **Where to see the gate in the diff** (file path / commit / line range) — *if you actually built it*:
-- **If you did not build it,** name the reason (scope, time, dependency, "this is the right call but needs a wider conversation"):
+- **Instances I fixed:** The Merchant-Id header was accepted without verification: anyone could read the data of any merchant
+- **The gate I built (or would build):** 
+    The merchant comes only from the API key
+    MerchantId is passed to the handler and it throws an error if it fails
+    GetById(id, merchantId) requires the id in the request
+- **What this gate would catch that a regression test would miss:** 
+    Work should be done on a route without auth
+- **Where to see the gate in the diff** 
+    Claude took care of modifying the files
+- **If you did not build it,** 
+    n my case I did not build it because I do not fully know the language and structure, however I went with analysis of the code first, confirming that the modified classes are the right ones
 
-### Class 2 — <name the class>
+### Class 2
 
-…
+- **Instances I fixed:** Client input without validation
+- **The gate I built (or would build):** 
+    The handler receives ValidatedInput and never req
+    A test fails if a file registers a route without validation
+- **What this gate would catch that a regression test would miss:** It would also be worth validating the new filtering feature that was added
+- **Where to see the gate in the diff** 
+    Claude took care of modifying the files
+- **If you did not build it,** 
+    In my case I did not build it because I do not fully know the language and structure, however I went with analysis of the code first, confirming that the modified classes are the right ones
+    
+### Class 3
 
-### Class 3 — <name the class>
-
-…
-
+- **Instances I fixed:** Money rules
+- **The gate I built (or would build):** 
+    A file was created that holds the rules the system in general must follow
+- **Where to see the gate in the diff** 
+    Claude took care of modifying the files
+- **If you did not build it,** 
+    In my case I did not build it because I do not fully know the language and structure, however I went with analysis of the code first, confirming that the modified classes are the right ones
+    
 ---
 
 ## Anti-patterns we score against
