@@ -6,7 +6,7 @@
 
 ## Tool(s) used
 
-- [ ] Claude Code
+- [x] Claude Code
 - [ ] Claude.ai
 - [ ] Cursor
 - [ ] Copilot
@@ -16,7 +16,7 @@
 
 ## How much of the work was AI-assisted
 
-- [ ] Most of it
+- [x] Most of it
 - [ ] About half
 - [ ] Less than half — used it for specific tasks
 - [ ] None at all
@@ -27,27 +27,41 @@
 
 For each session, paste the raw transcript or the prompts you sent, in order. Don't trim.
 
-### Session 1 — <topic>
-
-**Prompt:**
-```
-<paste verbatim>
-```
-
-**What the model returned:**
-<short summary or paste>
-
-**What I accepted, rejected, or refined:**
-
+### Session 1 — Context
+https://claude.ai/share/668757a5-00ed-4f26-9e6a-31fd09912844 
 
 ---
 
-### Session 2 — <topic>
-
-…
+### Session 2 — Fix 1
+https://claude.ai/share/58d3a370-4b7d-4ca4-a286-9469f8626107
 
 ---
 
+### Session 3 — Fix 2
+https://claude.ai/share/d04a0ebc-4469-4f09-8592-c38c9c360668
+
+---
+
+### Session 4 — Fix 3
+https://claude.ai/share/66072e39-bc48-4253-9726-6170a8b25abf
+
+---
+
+### Session 5 — Feauture 
+https://claude.ai/share/8b6b9fc6-f01f-4a04-b246-9225d1041297
+
+---
+
+### Session 6 — Documentation
+
+https://claude.ai/share/f3eb8221-6f9e-43cf-ab42-d9bf790e15ad
+
+---
+
+### Session 7 — Documentation
+https://claude.ai/share/5b70ccdb-d789-4c0c-90e6-f99eef3d0e48
+
+---
 ## What Claude (or your AI tool) got wrong
 
 > **Mandatory.** Three or more specific examples of AI output you rejected, corrected, or had to re-prompt. If you cannot fill this section, that itself is the signal — either nothing was reviewed, or the review left no trace. Either way, the score reflects it.
